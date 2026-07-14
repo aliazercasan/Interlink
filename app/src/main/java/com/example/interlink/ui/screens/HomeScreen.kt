@@ -5,6 +5,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
@@ -34,6 +35,30 @@ fun HomeScreen(
             title = { Text("Join Intercom") },
             text = {
                 Column {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Reminder: Ensure you are connected to the Host's Hotspot or Wi-Fi.",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         "Enter the Host's IP address to connect manually. Leave blank for automatic discovery.",
                         style = MaterialTheme.typography.bodyMedium
@@ -109,7 +134,31 @@ fun HomeScreen(
                 color = MaterialTheme.colorScheme.outline
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        "Make sure all devices are on the same local network or host hotspot.",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             MenuCard(
                 title = "Create Server",
