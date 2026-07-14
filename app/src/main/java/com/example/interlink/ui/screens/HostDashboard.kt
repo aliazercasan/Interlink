@@ -38,6 +38,7 @@ fun HostDashboard(
 ) {
     var isTalking by remember { mutableStateOf(false) }
     val isHotspot = hostIp == "192.168.43.1" || (hostIp != null && NetworkUtils.isHotspotActive())
+    val networkType = NetworkUtils.getInterfaceType(hostIp)
 
     DisposableEffect(Unit) {
         onDispose {
@@ -69,7 +70,7 @@ fun HostDashboard(
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            ServerStatusCard(hostIp, isHotspot)
+            ServerStatusCard(hostIp, isHotspot, networkType)
             
             Spacer(modifier = Modifier.height(24.dp))
             
@@ -116,12 +117,18 @@ fun HostDashboard(
 }
 
 @Composable
-fun ServerStatusCard(hostIp: String?, isHotspot: Boolean) {
+fun ServerStatusCard(hostIp: String?, isHotspot: Boolean, networkType: String) {
+    val isMobileData = networkType.contains("Mobile")
+    
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.elevatedCardColors(
-            containerColor = if (isHotspot) Color(0xFF006064) else MaterialTheme.colorScheme.primary
+            containerColor = when {
+                isHotspot -> Color(0xFF006064)
+                isMobileData -> Color(0xFF1B5E20)
+                else -> MaterialTheme.colorScheme.primary
+            }
         )
     ) {
         Column(
@@ -132,11 +139,11 @@ fun ServerStatusCard(hostIp: String?, isHotspot: Boolean) {
                     modifier = Modifier
                         .size(10.dp)
                         .clip(CircleShape)
-                        .background(if (isHotspot) Color(0xFF00BCD4) else Color(0xFF4CAF50))
+                        .background(if (isHotspot || isMobileData) Color(0xFF4CAF50) else Color(0xFF4CAF50))
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    if (isHotspot) "Hotspot Mode (Offline)" else "Wi-Fi Server (Offline)",
+                    "$networkType Mode",
                     style = MaterialTheme.typography.labelLarge,
                     color = Color.White.copy(alpha = 0.8f)
                 )
@@ -149,7 +156,11 @@ fun ServerStatusCard(hostIp: String?, isHotspot: Boolean) {
                 fontWeight = FontWeight.Bold
             )
             Text(
-                if (isHotspot) "Other devices can join your Hotspot" else "Connect devices to the same Wi-Fi",
+                when {
+                    isHotspot -> "Others can join your Hotspot (Offline)"
+                    isMobileData -> "Hosting via Mobile Data / Public IP"
+                    else -> "Connect via Local Wi-Fi"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.7f)
             )

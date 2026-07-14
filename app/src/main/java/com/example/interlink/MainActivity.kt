@@ -14,14 +14,14 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.interlink.service.IntercomService
+import com.example.interlink.client.ClientManager
 import com.example.interlink.ui.screens.ClientDashboard
 import com.example.interlink.ui.screens.HomeScreen
 import com.example.interlink.ui.screens.HostDashboard
@@ -73,6 +73,23 @@ class MainActivity : ComponentActivity() {
                 val viewModel: MainViewModel = viewModel()
                 val devices by viewModel.devices.collectAsState()
                 val hostIp by viewModel.hostIp.collectAsState()
+                
+                // Navigate to dashboard if service is already active
+                LaunchedEffect(isBound) {
+                    if (isBound) {
+                        intercomService?.let { service ->
+                            if (service.isHostActive()) {
+                                navController.navigate("host") {
+                                    popUpTo("home") { inclusive = false }
+                                }
+                            } else if (service.isClientActive()) {
+                                navController.navigate("client") {
+                                    popUpTo("home") { inclusive = false }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 NavHost(navController = navController, startDestination = "home") {
                     composable("home") {
@@ -86,7 +103,17 @@ class MainActivity : ComponentActivity() {
                                 intercomService?.startAsClient(ip)
                                 navController.navigate("client")
                             },
-                            onSettings = { /* Handle settings */ }
+                            onSettings = { /* Handle settings */ },
+                            onRestart = {
+                                intercomService?.let {
+                                    val intent = Intent(this@MainActivity, it::class.java)
+                                    stopService(intent)
+                                }
+                                val intent = Intent(this@MainActivity, MainActivity::class.java)
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                                startActivity(intent)
+                                Runtime.getRuntime().exit(0)
+                            }
                         )
                     }
                     composable("host") {
@@ -100,8 +127,11 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("client") {
+                        val clientStatus by intercomService?.getClientConnectionStatus()?.collectAsState(ClientManager.ConnectionStatus.DISCONNECTED) ?: remember { mutableStateOf(ClientManager.ConnectionStatus.DISCONNECTED) }
+                        
                         ClientDashboard(
-                            status = "Connected",
+                            status = clientStatus.name,
+                            isConnected = clientStatus == ClientManager.ConnectionStatus.CONNECTED,
                             onPttPressed = { intercomService?.startPtt() },
                             onPttReleased = { intercomService?.stopPtt() },
                             onBack = { navController.popBackStack() }

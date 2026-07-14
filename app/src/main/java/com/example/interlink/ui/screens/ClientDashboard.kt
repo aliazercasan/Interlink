@@ -24,6 +24,7 @@ import com.example.interlink.ui.components.IntercomButton
 @Composable
 fun ClientDashboard(
     status: String,
+    isConnected: Boolean,
     onPttPressed: () -> Unit,
     onPttReleased: () -> Unit,
     onBack: () -> Unit
@@ -58,16 +59,29 @@ fun ClientDashboard(
         ) {
             ConnectionStatusCard(status)
             
+            Text(
+                when {
+                    !isConnected && status == "FAILED" -> "Connection Failed. Please check if Host is running."
+                    !isConnected -> "Waiting for Host..."
+                    else -> "Connected to Host"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (status == "FAILED") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            
             IntercomButton(
                 isTalking = isTalking,
                 onClick = {
-                    isTalking = !isTalking
-                    if (isTalking) onPttPressed() else onPttReleased()
+                    if (isConnected) {
+                        isTalking = !isTalking
+                        if (isTalking) onPttPressed() else onPttReleased()
+                    }
                 },
                 size = 180.dp,
                 iconSize = 48.dp,
                 activeLabel = "TALKING...",
-                inactiveLabel = "TAP TO TALK"
+                inactiveLabel = if (isConnected) "TAP TO TALK" else "WAITING..."
             )
             
             Text(

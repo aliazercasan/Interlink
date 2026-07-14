@@ -7,6 +7,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -25,7 +27,27 @@ class ClientManager @Inject constructor(
     private var udpSocket: DatagramSocket? = null
     private var hostAddress: InetAddress? = null
 
+    private val _connectionStatus = MutableStateFlow<ConnectionStatus>(ConnectionStatus.DISCONNECTED)
+    val connectionStatus = _connectionStatus.asStateFlow()
+
+    enum class ConnectionStatus {
+        DISCONNECTED, CONNECTING, CONNECTED, FAILED
+    }
+
+    fun isConnected(): Boolean = _connectionStatus.value == ConnectionStatus.CONNECTED
+
     fun discoverAndConnect() {
+        _connectionStatus.value = ConnectionStatus.CONNECTING
+        
+        // Timeout for discovery
+        scope.launch {
+            kotlinx.coroutines.delay(10000)
+            if (_connectionStatus.value == ConnectionStatus.CONNECTING) {
+                _connectionStatus.value = ConnectionStatus.FAILED
+                nsdHelper.stopDiscovery()
+            }
+        }
+
         nsdHelper.discoverServices { serviceInfo ->
             hostAddress = serviceInfo.host
             connectToHost(serviceInfo.host, serviceInfo.port)
@@ -33,6 +55,7 @@ class ClientManager @Inject constructor(
     }
 
     fun connectToManualIp(ip: String) {
+        _connectionStatus.value = ConnectionStatus.CONNECTING
         scope.launch(Dispatchers.IO) {
             try {
                 val address = InetAddress.getByName(ip)
@@ -40,6 +63,7 @@ class ClientManager @Inject constructor(
                 connectToHost(address, Constants.TCP_PORT)
             } catch (e: Exception) {
                 Timber.e(e, "Invalid IP address")
+                _connectionStatus.value = ConnectionStatus.FAILED
             }
         }
     }
@@ -50,9 +74,11 @@ class ClientManager @Inject constructor(
                 val socket = Socket(address, port)
                 Timber.d("Connected to Host at ${address.hostAddress}")
                 socket.close()
+                _connectionStatus.value = ConnectionStatus.CONNECTED
                 startUdpListener()
             } catch (e: Exception) {
                 Timber.e(e, "Failed to connect to Host")
+                _connectionStatus.value = ConnectionStatus.FAILED
             }
         }
     }
@@ -98,5 +124,6 @@ class ClientManager @Inject constructor(
         udpSocket?.close()
         udpSocket = null
         hostAddress = null
+        _connectionStatus.value = ConnectionStatus.DISCONNECTED
     }
 }

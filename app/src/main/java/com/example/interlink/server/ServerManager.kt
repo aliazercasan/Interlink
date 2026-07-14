@@ -30,7 +30,7 @@ class ServerManager @Inject constructor(
     private var tcpSocket: ServerSocket? = null
     private var udpSocket: DatagramSocket? = null
 
-    private val connectedClients = mutableSetOf<InetAddress>()
+    private val connectedClients = mutableMapOf<String, InetAddress>()
 
     fun startServer() {
         scope.launch {
@@ -62,7 +62,7 @@ class ServerManager @Inject constructor(
             val clientName = "Client-$clientIp" 
             Timber.d("Client connected: $clientIp")
             synchronized(connectedClients) {
-                connectedClients.add(socket.inetAddress)
+                connectedClients[clientIp] = socket.inetAddress
             }
             deviceRepository.insertDevice(Device(clientIp, clientName, true))
             socket.close()
@@ -95,15 +95,22 @@ class ServerManager @Inject constructor(
     }
 
     fun broadcastData(data: ByteArray, senderAddress: InetAddress? = null) {
+        val senderIp = senderAddress?.hostAddress
         synchronized(connectedClients) {
-            connectedClients.forEach { clientAddress ->
-                if (clientAddress != senderAddress) {
+            if (connectedClients.isEmpty()) {
+                Timber.w("No clients connected to receive broadcast")
+                return
+            }
+            connectedClients.forEach { (clientIp, clientAddress) ->
+                if (clientIp != senderIp) {
                     scope.launch {
                         try {
+                            val socket = udpSocket ?: DatagramSocket()
                             val broadcastPacket = DatagramPacket(data, data.size, clientAddress, Constants.UDP_PORT)
-                            udpSocket?.send(broadcastPacket)
+                            socket.send(broadcastPacket)
+                            if (udpSocket == null) socket.close()
                         } catch (e: Exception) {
-                            Timber.e(e, "Error broadcasting to $clientAddress")
+                            Timber.e(e, "Error broadcasting to $clientIp")
                         }
                     }
                 }

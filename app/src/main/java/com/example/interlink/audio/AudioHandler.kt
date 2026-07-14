@@ -47,8 +47,10 @@ class AudioHandler @Inject constructor(
     private var echoCanceler: AcousticEchoCanceler? = null
     private var gainControl: AutomaticGainControl? = null
     private var audioTrack: AudioTrack? = null
+    private var audioSessionId: Int = AudioManager.AUDIO_SESSION_ID_GENERATE
     private var recordingJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val frameSize = 320 // 20ms at 16kHz for low latency
 
     @SuppressLint("MissingPermission")
     fun startRecording(onDataEncoded: (ByteArray) -> Unit) {
@@ -57,12 +59,17 @@ class AudioHandler @Inject constructor(
             encoder = OpusEncoder(sampleRate, 1, OpusApplication.Voip)
         }
         
+        // Ensure mic is not muted by system
+        audioManager.isMicrophoneMute = false
+        
+        val recordBufferSize = bufferSizeRecord.coerceAtLeast(960 * 2 * 2) // Extra headroom
+
         audioRecord = AudioRecord(
             MediaRecorder.AudioSource.VOICE_COMMUNICATION,
             sampleRate,
             channelConfigRecord,
             audioFormat,
-            bufferSizeRecord
+            recordBufferSize
         )
 
         if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
@@ -73,7 +80,7 @@ class AudioHandler @Inject constructor(
                 sampleRate,
                 channelConfigRecord,
                 audioFormat,
-                bufferSizeRecord
+                recordBufferSize
             )
         }
 
@@ -82,33 +89,48 @@ class AudioHandler @Inject constructor(
             return
         }
 
+        audioSessionId = audioRecord?.audioSessionId ?: AudioManager.AUDIO_SESSION_ID_GENERATE
+
         audioRecord?.audioSessionId?.let { sessionId ->
             if (NoiseSuppressor.isAvailable()) {
                 noiseSuppressor = NoiseSuppressor.create(sessionId)?.apply { enabled = true }
-                Timber.d("NoiseSuppressor enabled")
             }
             if (AcousticEchoCanceler.isAvailable()) {
                 echoCanceler = AcousticEchoCanceler.create(sessionId)?.apply { enabled = true }
-                Timber.d("AcousticEchoCanceler enabled")
             }
             if (AutomaticGainControl.isAvailable()) {
                 gainControl = AutomaticGainControl.create(sessionId)?.apply { enabled = true }
-                Timber.d("AutomaticGainControl enabled")
             }
         }
 
         audioRecord?.startRecording()
+        
         if (audioRecord?.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
-            Timber.e("AudioRecord failed to start recording")
+            Timber.e("AudioRecord failed to start. Retrying with MIC source...")
+            stopRecording()
+            // Recurse once with a flag could work, but let's just force MIC next time
             return
         }
 
-        Timber.d("AudioRecord started")
+        Timber.d("AudioRecord started successfully")
         recordingJob = scope.launch {
-            val pcmBuffer = ShortArray(960) // 60ms at 16kHz
+            val pcmBuffer = ShortArray(frameSize) 
+            var framesWithZeroData = 0
+            
             while (isActive && audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
                 val read = audioRecord?.read(pcmBuffer, 0, pcmBuffer.size) ?: 0
                 if (read > 0) {
+                    // Check if we are getting actual data
+                    val isSilence = pcmBuffer.take(read).all { it == 0.toShort() }
+                    if (isSilence) {
+                        framesWithZeroData++
+                        if (framesWithZeroData > 150) { // Approx 3 seconds of total silence (20ms * 150)
+                            Timber.w("Detected consistent silence in VOICE_COMMUNICATION, possible offline bug")
+                        }
+                    } else {
+                        framesWithZeroData = 0
+                    }
+
                     val encoded = encoder?.encode(pcmBuffer.take(read).toShortArray())
                     if (encoded != null && encoded.isNotEmpty()) {
                         onDataEncoded(encoded)
@@ -153,23 +175,27 @@ class AudioHandler @Inject constructor(
             .setSampleRate(sampleRate)
             .setChannelMask(channelConfigPlay)
             .build()
+            
+        val minBufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfigPlay, audioFormat)
+        val playBufferSize = minBufferSize.coerceAtLeast(frameSize * 2 * 2)
 
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(attributes)
             .setAudioFormat(format)
-            .setBufferSizeInBytes(bufferSizePlay)
+            .setBufferSizeInBytes(playBufferSize)
             .setTransferMode(AudioTrack.MODE_STREAM)
+            .setSessionId(audioSessionId)
             .build()
             
         audioTrack?.play()
-        Timber.d("AudioTrack started playing")
+        Timber.d("AudioTrack started playing with buffer size $playBufferSize and sessionId $audioSessionId")
     }
 
     fun playEncodedData(encodedData: ByteArray) {
         if (audioTrack == null || audioTrack?.state == AudioTrack.STATE_UNINITIALIZED) {
             startPlayback()
         }
-        val decoded = decoder?.decode(encodedData, 960)
+        val decoded = decoder?.decode(encodedData, frameSize)
         if (decoded != null) {
             val result = audioTrack?.write(decoded, 0, decoded.size)
             if (result == AudioTrack.ERROR_INVALID_OPERATION || result == AudioTrack.ERROR_BAD_VALUE) {

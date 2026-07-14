@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Podcasts
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
@@ -24,7 +25,8 @@ import androidx.compose.ui.unit.sp
 fun HomeScreen(
     onCreateServer: () -> Unit,
     onJoinServer: (String?) -> Unit,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    onRestart: () -> Unit
 ) {
     var showJoinDialog by remember { mutableStateOf(false) }
     var hostIp by remember { mutableStateOf("") }
@@ -113,6 +115,9 @@ fun HomeScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onRestart) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Restart App")
+                    }
                     IconButton(onClick = onSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }

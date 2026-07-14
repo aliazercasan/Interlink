@@ -38,6 +38,10 @@ class IntercomService : LifecycleService() {
         fun getService(): IntercomService = this@IntercomService
     }
 
+    fun isHostActive(): Boolean = isHost
+    fun isClientActive(): Boolean = !isHost && clientManager.isConnected()
+    fun getClientConnectionStatus() = clientManager.connectionStatus
+
     override fun onBind(intent: Intent): IBinder {
         super.onBind(intent)
         return binder
@@ -103,12 +107,16 @@ class IntercomService : LifecycleService() {
     }
 
     fun startAsHost() {
+        if (isHost) return
         isHost = true
         serverManager.startServer()
         audioHandler.startPlayback()
     }
 
     fun startAsClient(ip: String? = null) {
+        // If we are already connected to this IP, don't restart
+        if (!isHost && clientManager.isConnected()) return
+
         isHost = false
         if (ip.isNullOrBlank()) {
             clientManager.discoverAndConnect()
