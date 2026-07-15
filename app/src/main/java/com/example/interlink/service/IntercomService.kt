@@ -4,7 +4,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
 import android.net.wifi.WifiManager
 import android.os.Binder
@@ -19,6 +18,8 @@ import com.example.interlink.server.ServerManager
 import com.example.interlink.audio.AudioHandler
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 
 @AndroidEntryPoint
@@ -31,6 +32,9 @@ class IntercomService : LifecycleService() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
+    private val _isMusicStreaming = MutableStateFlow(false)
+    val isMusicStreaming = _isMusicStreaming.asStateFlow()
+
     private val binder = IntercomBinder()
     private var isHost = false
 
@@ -41,6 +45,30 @@ class IntercomService : LifecycleService() {
     fun isHostActive(): Boolean = isHost
     fun isClientActive(): Boolean = !isHost && clientManager.isConnected()
     fun getClientConnectionStatus() = clientManager.connectionStatus
+    fun getPendingMusicRequests() = serverManager.pendingMusicRequests
+    fun isMusicSharingApproved() = clientManager.isMusicSharingApproved
+
+    fun approveMusicRequest(request: com.example.interlink.models.MusicRequest) = serverManager.approveMusicRequest(request)
+    fun denyMusicRequest(request: com.example.interlink.models.MusicRequest) = serverManager.denyMusicRequest(request)
+    
+    fun requestMusicShare(username: String) = clientManager.requestMusicShare(username)
+    fun stopMusicShare() = clientManager.stopMusicShare()
+
+    fun startMusicSharing(uri: android.net.Uri) {
+        _isMusicStreaming.value = true
+        audioHandler.startMusicStreaming(uri) { data ->
+            if (isHost) {
+                serverManager.broadcastData(data)
+            } else {
+                clientManager.sendVoiceData(data)
+            }
+        }
+    }
+
+    fun stopMusicSharing() {
+        audioHandler.stopMusicStreaming()
+        _isMusicStreaming.value = false
+    }
 
     override fun onBind(intent: Intent): IBinder {
         super.onBind(intent)
@@ -50,19 +78,26 @@ class IntercomService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         acquireLocks()
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            createNotificationChannel()
+        createNotificationChannel()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                1,
+                createNotification(),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            )
+        } else {
+            startForeground(1, createNotification())
         }
-        startForeground(1, createNotification())
     }
 
     private fun acquireLocks() {
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Interlink:ServiceWakeLock").apply {
-            acquire()
+            acquire(10 * 60 * 1000L /*10 minutes*/)
         }
 
-        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
         wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "Interlink:WifiLock").apply {
             acquire()
         }
@@ -86,15 +121,13 @@ class IntercomService : LifecycleService() {
     }
 
     private fun createNotificationChannel() {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                "interlink_service",
-                "InterLink Service",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
-        }
+        val channel = NotificationChannel(
+            "interlink_service",
+            "InterLink Service",
+            NotificationManager.IMPORTANCE_LOW
+        )
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.createNotificationChannel(channel)
     }
 
     private fun createNotification(): Notification {

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,7 +35,13 @@ fun HostDashboard(
     onRefreshIp: () -> Unit,
     onPttPressed: () -> Unit,
     onPttReleased: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onPickMusic: () -> Unit = {},
+    onStopMusic: () -> Unit = {},
+    isMusicPlaying: Boolean = false,
+    pendingMusicRequests: List<com.example.interlink.models.MusicRequest> = emptyList(),
+    onApproveMusic: (com.example.interlink.models.MusicRequest) -> Unit = {},
+    onDenyMusic: (com.example.interlink.models.MusicRequest) -> Unit = {}
 ) {
     var isTalking by remember { mutableStateOf(false) }
     val isHotspot = hostIp == "192.168.43.1" || (hostIp != null && NetworkUtils.isHotspotActive())
@@ -71,6 +78,30 @@ fun HostDashboard(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             ServerStatusCard(hostIp, isHotspot, networkType)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedButton(
+                onClick = if (isMusicPlaying) onStopMusic else onPickMusic,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = if (isMusicPlaying) {
+                    ButtonDefaults.outlinedButtonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                } else {
+                    ButtonDefaults.outlinedButtonColors()
+                }
+            ) {
+                Icon(Icons.Default.MusicNote, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (isMusicPlaying) "Stop Sharing Music" else "Share Music with Everyone")
+            }
+            
+            if (pendingMusicRequests.isNotEmpty()) {
+                MusicRequestsSection(pendingMusicRequests, onApproveMusic, onDenyMusic)
+            }
             
             Spacer(modifier = Modifier.height(24.dp))
             
@@ -112,6 +143,33 @@ fun HostDashboard(
                     if (isTalking) onPttPressed() else onPttReleased()
                 }
             )
+        }
+    }
+}
+
+@Composable
+fun MusicRequestsSection(
+    requests: List<com.example.interlink.models.MusicRequest>,
+    onApprove: (com.example.interlink.models.MusicRequest) -> Unit,
+    onDeny: (com.example.interlink.models.MusicRequest) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+        Text("Music Sharing Requests", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+        requests.forEach { request ->
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(request.clientName, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { onDeny(request) }) { Text("Deny", color = MaterialTheme.colorScheme.error) }
+                    Button(onClick = { onApprove(request) }) { Text("Allow") }
+                }
+            }
         }
     }
 }

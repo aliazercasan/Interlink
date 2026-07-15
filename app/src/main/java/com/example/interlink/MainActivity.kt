@@ -5,10 +5,12 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -117,24 +119,60 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("host") {
+                        val pendingRequests by intercomService?.getPendingMusicRequests()?.collectAsState(emptyList()) ?: remember { mutableStateOf(emptyList()) }
+                        val isMusicStreaming by intercomService?.isMusicStreaming?.collectAsState(false) ?: remember { mutableStateOf(false) }
+                        
+                        val hostMusicPicker = rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.GetContent()
+                        ) { uri: Uri? ->
+                            uri?.let { intercomService?.startMusicSharing(it) }
+                        }
+
                         HostDashboard(
                             devices = devices,
                             hostIp = hostIp,
+                            pendingMusicRequests = pendingRequests,
                             onRefreshIp = { viewModel.refreshHostIp() },
                             onPttPressed = { intercomService?.startPtt() },
                             onPttReleased = { intercomService?.stopPtt() },
-                            onBack = { navController.popBackStack() }
+                            onApproveMusic = { intercomService?.approveMusicRequest(it) },
+                            onDenyMusic = { intercomService?.denyMusicRequest(it) },
+                            onPickMusic = { hostMusicPicker.launch("audio/*") },
+                            onStopMusic = { intercomService?.stopMusicSharing() },
+                            isMusicPlaying = isMusicStreaming,
+                            onBack = { 
+                                intercomService?.stopMusicSharing()
+                                navController.popBackStack() 
+                            }
                         )
                     }
                     composable("client") {
                         val clientStatus by intercomService?.getClientConnectionStatus()?.collectAsState(ClientManager.ConnectionStatus.DISCONNECTED) ?: remember { mutableStateOf(ClientManager.ConnectionStatus.DISCONNECTED) }
+                        val musicApproved by intercomService?.isMusicSharingApproved()?.collectAsState(false) ?: remember { mutableStateOf(false) }
+                        val username by viewModel.username.collectAsState()
                         
+                        val musicPickerLauncher = rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.GetContent()
+                        ) { uri: Uri? ->
+                            uri?.let { intercomService?.startMusicSharing(it) }
+                        }
+
                         ClientDashboard(
                             status = clientStatus.name,
                             isConnected = clientStatus == ClientManager.ConnectionStatus.CONNECTED,
+                            isMusicSharingApproved = musicApproved,
+                            onRequestMusicShare = { intercomService?.requestMusicShare(username) },
+                            onStopMusicShare = { 
+                                intercomService?.stopMusicSharing()
+                                intercomService?.stopMusicShare() 
+                            },
+                            onPickMusic = { musicPickerLauncher.launch("audio/*") },
                             onPttPressed = { intercomService?.startPtt() },
                             onPttReleased = { intercomService?.stopPtt() },
-                            onBack = { navController.popBackStack() }
+                            onBack = { 
+                                intercomService?.stopMusicSharing()
+                                navController.popBackStack() 
+                            }
                         )
                     }
                 }
@@ -151,6 +189,9 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
             permissions.add(Manifest.permission.NEARBY_WIFI_DEVICES)
+            permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
+        } else {
+            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
         return permissions.all {
             checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -166,6 +207,9 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
             permissions.add(Manifest.permission.NEARBY_WIFI_DEVICES)
+            permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
+        } else {
+            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
         requestPermissionLauncher.launch(permissions.toTypedArray())
     }

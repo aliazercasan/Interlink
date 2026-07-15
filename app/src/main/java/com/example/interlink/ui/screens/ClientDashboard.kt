@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,6 +26,10 @@ import com.example.interlink.ui.components.IntercomButton
 fun ClientDashboard(
     status: String,
     isConnected: Boolean,
+    isMusicSharingApproved: Boolean = false,
+    onRequestMusicShare: () -> Unit = {},
+    onStopMusicShare: () -> Unit = {},
+    onPickMusic: () -> Unit = {},
     onPttPressed: () -> Unit,
     onPttReleased: () -> Unit,
     onBack: () -> Unit
@@ -58,6 +63,37 @@ fun ClientDashboard(
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             ConnectionStatusCard(status)
+
+            if (isConnected) {
+                OutlinedButton(
+                    onClick = if (isMusicSharingApproved) onStopMusicShare else onRequestMusicShare,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = if (isMusicSharingApproved) {
+                        ButtonDefaults.outlinedButtonColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    } else {
+                        ButtonDefaults.outlinedButtonColors()
+                    }
+                ) {
+                    Icon(Icons.Default.MusicNote, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (isMusicSharingApproved) "Stop Sharing Music" else "Request to Share Music")
+                }
+
+                if (isMusicSharingApproved) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = onPickMusic,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Pick & Play Music")
+                    }
+                }
+            }
             
             Text(
                 when {
