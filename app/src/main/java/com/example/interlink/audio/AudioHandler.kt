@@ -24,6 +24,49 @@ class AudioHandler @Inject constructor(@ApplicationContext private val context: 
     private val voiceBitrate = 16000
     private val musicBitrate = 96000
 
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+            updateAudioRouting()
+        }
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+            updateAudioRouting()
+        }
+    }
+
+    init {
+        audioManager.registerAudioDeviceCallback(deviceCallback, null)
+    }
+
+    private fun updateAudioRouting() {
+        val inputs = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+        val outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+
+        val hasWiredHeadset = inputs.any { it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == AudioDeviceInfo.TYPE_USB_HEADSET }
+        val hasBluetooth = outputs.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP } ||
+                           inputs.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+
+        if (audioManager.mode == AudioManager.MODE_IN_COMMUNICATION) {
+            if (hasBluetooth) {
+                audioManager.isSpeakerphoneOn = false
+                try {
+                    audioManager.startBluetoothSco()
+                    audioManager.isBluetoothScoOn = true
+                } catch (e: Exception) {
+                    Timber.e(e, "Error starting Bluetooth SCO")
+                }
+            } else if (hasWiredHeadset) {
+                audioManager.isSpeakerphoneOn = false
+                audioManager.isBluetoothScoOn = false
+                audioManager.stopBluetoothSco()
+            } else {
+                audioManager.isSpeakerphoneOn = true
+                audioManager.isBluetoothScoOn = false
+                audioManager.stopBluetoothSco()
+            }
+        }
+        Timber.d("Audio routing updated. HasWired: $hasWiredHeadset, HasBT: $hasBluetooth, Speakerphone: ${audioManager.isSpeakerphoneOn}")
+    }
+
     private var voiceEncoder: OpusEncoder? = null
     private var musicEncoder: OpusEncoder? = null
     private var voiceDecoder: OpusDecoder? = null
@@ -46,6 +89,10 @@ class AudioHandler @Inject constructor(@ApplicationContext private val context: 
     @SuppressLint("MissingPermission")
     fun startRecording(onDataEncoded: (ByteArray) -> Unit) {
         stopRecording()
+        
+        // Ensure audio routing is correct before starting the recording stream
+        updateAudioRouting()
+
         if (voiceEncoder == null) {
             voiceEncoder = OpusEncoder(sampleRate, 1, OpusApplication.Voip).apply { 
                 ctl(OPUS_SET_BITRATE_REQUEST, voiceBitrate) 
@@ -202,7 +249,7 @@ class AudioHandler @Inject constructor(@ApplicationContext private val context: 
         if (musicDecoder == null) musicDecoder = OpusDecoder(sampleRate, 1)
         
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        audioManager.isSpeakerphoneOn = true
+        updateAudioRouting()
 
         val format = AudioFormat.Builder()
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
@@ -307,6 +354,7 @@ class AudioHandler @Inject constructor(@ApplicationContext private val context: 
         stopRecording()
         stopMusicStreaming()
         stopPlayback()
+        audioManager.unregisterAudioDeviceCallback(deviceCallback)
         voiceEncoder?.close()
         musicEncoder?.close()
         voiceDecoder?.close()
